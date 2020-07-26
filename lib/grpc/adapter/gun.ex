@@ -55,18 +55,22 @@ defmodule GRPC.Adapter.Gun do
         open_opts
       end
 
-    {:ok, conn_pid} = open(host, port, open_opts)
+    case open(host, port, open_opts) do
+      {:ok, conn_pid} ->
+        case :gun.await_up(conn_pid) do
+          {:ok, :http2} ->
+            {:ok, Map.put(channel, :adapter_payload, %{conn_pid: conn_pid})}
 
-    case :gun.await_up(conn_pid) do
-      {:ok, :http2} ->
-        {:ok, Map.put(channel, :adapter_payload, %{conn_pid: conn_pid})}
+          {:ok, proto} ->
+            :gun.shutdown(conn_pid)
+            {:error, "Error when opening connection: protocol #{proto} is not http2"}
 
-      {:ok, proto} ->
-        :gun.shutdown(conn_pid)
-        {:error, "Error when opening connection: protocol #{proto} is not http2"}
+          {:error, reason} ->
+            :gun.shutdown(conn_pid)
+            {:error, "Error when opening connection: #{inspect(reason)}"}
+        end
 
       {:error, reason} ->
-        :gun.shutdown(conn_pid)
         {:error, "Error when opening connection: #{inspect(reason)}"}
     end
   end
